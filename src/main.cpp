@@ -21,11 +21,17 @@ public:
 class SuspiciousFile : public BasicFile
 {
 protected:
-    const vector<string> susStrings;
-    const vector<string> extentions;
+    vector<string> susStrings;
+    vector<string> extentions;
 
 public:
-    SuspiciousFile(BasicFile basicFile, const vector<string> susStrings, const string extention) : BasicFile{basicFile}, susStrings{susStrings}, extentions{extention} {}
+    SuspiciousFile(BasicFile basicFile, vector<string> susStrings, vector<string> extentions) : BasicFile{basicFile}
+    {
+        for (const string &str : susStrings)
+            this->susStrings.push_back(str);
+        for (const string &str : extentions)
+            this->extentions.push_back(str);
+    }
     vector<string> get_sus_strings() const { return susStrings; }
     vector<string> get_extention() const { return extentions; }
 };
