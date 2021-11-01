@@ -1,11 +1,14 @@
 #include <iostream>
+#include <fstream>
 #include <regex>
 #include <vector>
 #include <string>
 #include <filesystem>
-#include <chrono>
+#include <ctime>
 
 using namespace std;
+
+using recursive_directory_iterator = filesystem::recursive_directory_iterator;
 
 class BasicFile
 {
@@ -14,8 +17,22 @@ protected:
 
 public:
     BasicFile(unsigned amount = 0, unsigned errorsAmount = 0) : amount(amount), errorsAmount(errorsAmount) {}
+
     unsigned get_amount() const { return amount; }
+
     unsigned get_errors_amount() const { return errorsAmount; }
+
+    void operate_file(const string &path)
+    {
+        ifstream input_file(path);
+        if (!input_file.is_open())
+        {
+            errorsAmount++;
+            return;
+        }
+
+        amount++;
+    }
 };
 
 class SuspiciousFile : public BasicFile
@@ -32,8 +49,32 @@ public:
         for (const string &str : extentions)
             this->extentions.push_back(str);
     }
+
     vector<string> get_sus_strings() const { return susStrings; }
+
     vector<string> get_extention() const { return extentions; }
+
+    void operate_file(const string &path)
+    {
+        ifstream inputFile(path);
+        if (!inputFile.is_open())
+        {
+            errorsAmount++;
+            return;
+        }
+
+        string fileContent = string((std::istreambuf_iterator<char>(inputFile)),
+                                    std::istreambuf_iterator<char>());
+
+        for (const auto &susString : this->susStrings)
+            if (fileContent.find(susString) != string::npos)
+            {
+                amount++;
+                break;
+            }
+
+        inputFile.close();
+    }
 };
 
 class JsSuspiciousFiles : public SuspiciousFile
@@ -61,35 +102,76 @@ private:
     JsSuspiciousFiles jsSuspiciousFiles;
     CmdSuspiciousFiles cmdSuspiciousFiles;
     ExeSuspiciousfiles exeSuspiciousFiles;
-    chrono::duration<double> execTime;
-    unsigned get_errors_amount();
+
+    clock_t runtime;
+    unsigned get_errors_amount()
+    {
+        return files.get_errors_amount() + jsSuspiciousFiles.get_errors_amount() +
+               cmdSuspiciousFiles.get_errors_amount() + exeSuspiciousFiles.get_errors_amount();
+    }
+
+    void extension_checker(const string &path)
+    {
+        for (const string &ext : jsSuspiciousFiles.get_extention())
+            if (path.rfind(ext) == path.rfind("."))
+                jsSuspiciousFiles.operate_file(path);
+
+        for (const string &ext : cmdSuspiciousFiles.get_extention())
+            if (path.rfind(ext) == path.rfind("."))
+                cmdSuspiciousFiles.operate_file(path);
+
+        for (const string &ext : exeSuspiciousFiles.get_extention())
+            if (path.rfind(ext) == path.rfind("."))
+                exeSuspiciousFiles.operate_file(path);
+
+        files.operate_file(path);
+    }
 
 public:
-    DirectoryScanner() {}
-    friend void output_scan_result(DirectoryScanner scan);
+    DirectoryScanner()
+    {
+        runtime = clock();
+    }
+
+    void scan_directory(const string &path)
+    {
+        for (const auto &dirEntry : recursive_directory_iterator(path))
+        {
+            if (dirEntry.status().type() == filesystem::file_type::directory)
+                continue;
+            extension_checker(dirEntry.path());
+        }
+    }
+
+    void output_scan_result()
+    {
+        runtime = (clock() - runtime) / CLOCKS_PER_SEC;
+        clock_t hours = runtime / 3600;
+        clock_t minutes = (runtime / 60) % 60;
+        clock_t seconds = runtime % 60;
+        cout << "\n\n====== Scan result ======"
+             << "\n\nProcessed files: " << this->files.get_amount()
+             << "\n\nJS detects: " << this->jsSuspiciousFiles.get_amount()
+             << "\n\nCMD detects: " << this->cmdSuspiciousFiles.get_amount()
+             << "\n\nEXE detects: " << this->exeSuspiciousFiles.get_amount()
+             << "\n\nErrors: " << this->get_errors_amount()
+             << "\n\nExecution time: " << hours << ":"
+             << minutes << ":"
+             << seconds
+             << "\n\n=========================\n\n"
+             << runtime;
+    }
 };
-
-unsigned DirectoryScanner::get_errors_amount()
-{
-    return files.get_errors_amount() + jsSuspiciousFiles.get_errors_amount() +
-           cmdSuspiciousFiles.get_errors_amount() + exeSuspiciousFiles.get_errors_amount();
-}
-
-void output_scan_result(DirectoryScanner scan)
-{
-    cout << "\n\n====== Scan result ======"
-         << "\n\nProcessed files: " << scan.files.get_amount()
-         << "\n\nJS detects: " << scan.jsSuspiciousFiles.get_amount()
-         << "\n\nCMD detects: " << scan.cmdSuspiciousFiles.get_amount()
-         << "\n\nEXE detects: " << scan.exeSuspiciousFiles.get_amount()
-         << "\n\nErrors: " << scan.get_errors_amount()
-         << "\n\nExecution time: " << scan.execTime.count()
-         << "\n\n=========================\n\n";
-}
 
 int main(int argc, char **argv)
 {
+    if (argc != 2)
+    {
+        throw std::runtime_error("Incorrect args amount");
+    }
+
     DirectoryScanner scanner;
-    output_scan_result(scanner);
+    scanner.scan_directory(argv[1]);
+    scanner.output_scan_result();
     return EXIT_SUCCESS;
 }
